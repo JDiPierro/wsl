@@ -70,7 +70,7 @@ func TestGenericHandling(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.description, func(t *testing.T) {
 			p := NewProcessor()
-			p.process("unit-test", tc.code)
+			p.ProcessFileData("unit-test", tc.code)
 
 			require.Len(t, p.result, len(tc.expectedErrorStrings), "correct amount of errors found")
 
@@ -205,7 +205,7 @@ func TestShouldRemoveEmptyLines(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.description, func(t *testing.T) {
 			p := NewProcessor()
-			p.process("unit-test", tc.code)
+			p.ProcessFileData("unit-test", tc.code)
 
 			require.Len(t, p.result, len(tc.expectedErrorStrings), "correct amount of errors found")
 
@@ -1204,7 +1204,7 @@ func TestShouldAddEmptyLines(t *testing.T) {
 			}
 
 			p := NewProcessor()
-			p.process("unit-test", tc.code)
+			p.ProcessFileData("unit-test", tc.code)
 
 			require.Len(t, p.result, len(tc.expectedErrorStrings), "correct amount of errors found")
 
@@ -1489,7 +1489,7 @@ func TestWithConfig(t *testing.T) {
 				p = NewProcessorWithConfig(*tc.customConfig)
 			}
 
-			p.process("unit-test", tc.code)
+			p.ProcessFileData("unit-test", tc.code)
 			require.Len(t, p.result, len(tc.expectedErrorStrings), "correct amount of errors found")
 
 			for i := range tc.expectedErrorStrings {
@@ -1527,7 +1527,7 @@ func TestTODO(t *testing.T) {
 				p = NewProcessorWithConfig(*tc.customConfig)
 			}
 
-			p.process("unit-test", tc.code)
+			p.ProcessFileData("unit-test", tc.code)
 
 			t.Logf("WARNINGS: %s", p.warnings)
 

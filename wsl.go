@@ -10,6 +10,30 @@ import (
 	"strings"
 )
 
+// LintErrorType represents the type of error the linter produces.
+type LintErrorType int
+
+// Available LintErrorTypes can be ShouldAddWS to remove a whitespace or ShouldRemoveWS
+// to add a whitespace.
+const (
+	ShouldAddWS LintErrorType = iota
+	ShouldRemoveWS
+	InvalidFile
+)
+
+func (l LintErrorType) String() string {
+	switch l {
+	case ShouldAddWS:
+		return "Add whitespace"
+	case ShouldRemoveWS:
+		return "Remove whitespace"
+	case InvalidFile:
+		return "The file is invalid..."
+	}
+
+	return ""
+}
+
 type Configuration struct {
 	// StrictAppend will do strict checking when assigning from append (x =
 	// append(x, y)). If this is set to true the append call must append either
@@ -96,15 +120,16 @@ func DefaultConfig() Configuration {
 
 // Result represents the result of one error.
 type Result struct {
-	FileName   string
-	LineNumber int
-	Position   token.Position
-	Reason     string
+	Type         LintErrorType
+	Reason       string
+	ErrorNode    ast.Node
+	PreviousNode ast.Node
 }
 
 // String returns the filename, line number and reason of a Result.
 func (r *Result) String() string {
-	return fmt.Sprintf("%s:%d: %s", r.FileName, r.LineNumber, r.Reason)
+	//return fmt.Sprintf("%s:%d: %s", r.FileName, r.LineNumber, r.Reason)
+	return r.Reason
 }
 
 type Processor struct {
@@ -138,29 +163,40 @@ func (p *Processor) ProcessFiles(filenames []string) ([]Result, []string) {
 			panic(err)
 		}
 
-		p.process(filename, data)
+		p.ProcessFileData(filename, data)
 	}
 
 	return p.result, p.warnings
 }
 
-func (p *Processor) process(filename string, data []byte) {
+// ProcessFileData takes *one* filename and a byte slice with data from *one*
+// file. The method will create a FileSet and an ast.File and pass to
+// ProcessAstFiles.
+func (p *Processor) ProcessFileData(filename string, data []byte) {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, filename, data, parser.ParseComments)
 
 	// If the file is not parsable let's add a syntax error and move on.
 	if err != nil {
 		p.result = append(p.result, Result{
-			FileName:   filename,
-			LineNumber: 0,
-			Reason:     fmt.Sprintf("invalid syntax, file cannot be linted (%s)", err.Error()),
+			Type:   InvalidFile,
+			Reason: fmt.Sprintf("invalid syntax, file cannot be linted (%s)", err.Error()),
 		})
 
 		return
 	}
 
+	p.ProcessAstFiles(fileSet, []*ast.File{file})
+}
+
+// ProcessAstFiles takes a token.FileSet and a slice of ast.File and lints the
+// files one by one.
+func (p *Processor) ProcessAstFiles(fileSet *token.FileSet, files []*ast.File) {
 	p.fileSet = fileSet
-	p.file = file
+
+	for _, astFile := range files {
+		p.file = astFile
+	}
 
 	for _, d := range p.file.Decls {
 		switch v := d.(type) {
@@ -303,12 +339,12 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 		switch t := stmt.(type) {
 		case *ast.IfStmt:
 			if len(assignedOnLineAbove) == 0 {
-				p.addError(t.Pos(), "if statements should only be cuddled with assignments")
+				p.shouldAddWS(t, previousStatement, "if statements should only be cuddled with assignments")
 				continue
 			}
 
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before if statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before if statement")
 				continue
 			}
 
@@ -320,26 +356,26 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 				continue
 			}
 
-			p.addError(t.Pos(), "if statements should only be cuddled with assignments used in the if statement itself")
+			p.shouldAddWS(t, previousStatement, "if statements should only be cuddled with assignments used in the if statement itself")
 		case *ast.ReturnStmt:
 			if isLastStatementInBlockOfOnlyTwoLines() {
 				continue
 			}
 
-			p.addError(t.Pos(), "return statements should not be cuddled if block has more than two lines")
+			p.shouldAddWS(t, previousStatement, "return statements should not be cuddled if block has more than two lines")
 		case *ast.BranchStmt:
 			if isLastStatementInBlockOfOnlyTwoLines() {
 				continue
 			}
 
-			p.addError(t.Pos(), "branch statements should not be cuddled if block has more than two lines")
+			p.shouldAddWS(t, previousStatement, "branch statements should not be cuddled if block has more than two lines")
 		case *ast.AssignStmt:
 			// append is usually an assignment but should not be allowed to be
 			// cuddled with anything not appended.
 			if len(rightHandSide) > 0 && rightHandSide[len(rightHandSide)-1] == "append" {
 				if p.config.StrictAppend {
 					if !atLeastOneInListsMatch(calledOrAssignedOnLineAbove, rightHandSide) {
-						p.addError(t.Pos(), "append only allowed to cuddle with appended value")
+						p.shouldAddWS(t, previousStatement, "append only allowed to cuddle with appended value")
 					}
 				}
 
@@ -362,17 +398,17 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 				}
 			}
 
-			p.addError(t.Pos(), "assignments should only be cuddled with other assignments")
+			p.shouldAddWS(t, previousStatement, "assignments should only be cuddled with other assignments")
 		case *ast.DeclStmt:
 			if !p.config.AllowCuddleDeclaration {
-				p.addError(t.Pos(), "declarations should never be cuddled")
+				p.shouldAddWS(t, previousStatement, "declarations should never be cuddled")
 			}
 		case *ast.ExprStmt:
 			switch previousStatement.(type) {
 			case *ast.DeclStmt, *ast.ReturnStmt:
-				p.addError(t.Pos(), "expressions should not be cuddled with declarations or returns")
+				p.shouldAddWS(t, previousStatement, "expressions should not be cuddled with declarations or returns")
 			case *ast.IfStmt, *ast.RangeStmt, *ast.SwitchStmt:
-				p.addError(t.Pos(), "expressions should not be cuddled with blocks")
+				p.shouldAddWS(t, previousStatement, "expressions should not be cuddled with blocks")
 			}
 
 			// If the expression is called on a type or variable used or
@@ -390,17 +426,17 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 			// If we assigned variables on the line above but didn't use them in
 			// this expression there should probably be a newline between them.
 			if len(assignedOnLineAbove) > 0 && !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
-				p.addError(t.Pos(), "only cuddled expressions if assigning variable or using from line above")
+				p.shouldAddWS(t, previousStatement, "only cuddled expressions if assigning variable or using from line above")
 			}
 		case *ast.RangeStmt:
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before range statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before range statement")
 				continue
 			}
 
 			if !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
 				if !atLeastOneInListsMatch(assignedOnLineAbove, assignedFirstInBlock) {
-					p.addError(t.Pos(), "ranges should only be cuddled with assignments used in the iteration")
+					p.shouldAddWS(t, previousStatement, "ranges should only be cuddled with assignments used in the iteration")
 				}
 			}
 		case *ast.DeferStmt:
@@ -429,7 +465,7 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 			}
 
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before defer statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before defer statement")
 
 				continue
 			}
@@ -443,17 +479,17 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 			}
 
 			if !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
-				p.addError(t.Pos(), "defer statements should only be cuddled with expressions on same variable")
+				p.shouldAddWS(t, previousStatement, "defer statements should only be cuddled with expressions on same variable")
 			}
 		case *ast.ForStmt:
 			if len(rightAndLeftHandSide) == 0 {
-				p.addError(t.Pos(), "for statement without condition should never be cuddled")
+				p.shouldAddWS(t, previousStatement, "for statement without condition should never be cuddled")
 
 				continue
 			}
 
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before for statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before for statement")
 
 				continue
 			}
@@ -463,7 +499,7 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 			// first line in the block for details.
 			if !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
 				if !atLeastOneInListsMatch(assignedOnLineAbove, assignedFirstInBlock) {
-					p.addError(t.Pos(), "for statements should only be cuddled with assignments used in the iteration")
+					p.shouldAddWS(t, previousStatement, "for statements should only be cuddled with assignments used in the iteration")
 				}
 			}
 		case *ast.GoStmt:
@@ -472,31 +508,31 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 			}
 
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before go statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before go statement")
 
 				continue
 			}
 
 			if !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
-				p.addError(t.Pos(), "go statements can only invoke functions assigned on line above")
+				p.shouldAddWS(t, previousStatement, "go statements can only invoke functions assigned on line above")
 			}
 		case *ast.SwitchStmt:
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before switch statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before switch statement")
 
 				continue
 			}
 
 			if !atLeastOneInListsMatch(rightAndLeftHandSide, assignedOnLineAbove) {
 				if len(rightAndLeftHandSide) == 0 {
-					p.addError(t.Pos(), "anonymous switch statements should never be cuddled")
+					p.shouldAddWS(t, previousStatement, "anonymous switch statements should never be cuddled")
 				} else {
-					p.addError(t.Pos(), "switch statements should only be cuddled with variables switched")
+					p.shouldAddWS(t, previousStatement, "switch statements should only be cuddled with variables switched")
 				}
 			}
 		case *ast.TypeSwitchStmt:
 			if moreThanOneStatementAbove() {
-				p.addError(t.Pos(), "only one cuddle assignment allowed before type switch statement")
+				p.shouldAddWS(t, previousStatement, "only one cuddle assignment allowed before type switch statement")
 
 				continue
 			}
@@ -506,7 +542,7 @@ func (p *Processor) parseBlockStatements(statements []ast.Stmt) {
 				// Allow type assertion on variables used in the first case
 				// immediately.
 				if !atLeastOneInListsMatch(assignedOnLineAbove, assignedFirstInBlock) {
-					p.addError(t.Pos(), "type switch statements should only be cuddled with variables switched")
+					p.shouldAddWS(t, previousStatement, "type switch statements should only be cuddled with variables switched")
 				}
 			}
 		case *ast.CaseClause, *ast.CommClause:
@@ -873,8 +909,8 @@ func (p *Processor) findLeadingAndTrailingWhitespaces(ident *ast.Ident, stmt, ne
 	}
 
 	if p.nodeStart(firstStatement) != blockStartLine+allowedLinesBeforeFirstStatement {
-		p.addError(
-			blockStartPos,
+		p.shouldRemoveWS(
+			stmt,
 			"block should not start with a whitespace",
 		)
 	}
@@ -899,7 +935,7 @@ func (p *Processor) findLeadingAndTrailingWhitespaces(ident *ast.Ident, stmt, ne
 		}
 
 		if p.nodeEnd(lastStatement) != blockEndLine-1 && !isExampleFunc(ident) {
-			p.addError(blockEndPos, "block should not end with a whitespace (or comment)")
+			p.shouldRemoveWS(stmt, "block should not end with a whitespace (or comment)")
 		}
 
 		return
@@ -963,7 +999,7 @@ func (p *Processor) findLeadingAndTrailingWhitespaces(ident *ast.Ident, stmt, ne
 	if p.config.CaseForceTrailingWhitespaceLimit > 0 && !hasTrailingWhitespace {
 		// Check if the block size is too big to miss the newline.
 		if blockSize >= p.config.CaseForceTrailingWhitespaceLimit {
-			p.addError(lastStatement.Pos(), "case block should end with newline at this size")
+			p.shouldRemoveWS(lastStatement, "case block should end with newline at this size")
 		}
 	}
 }
@@ -980,16 +1016,31 @@ func (p *Processor) nodeEnd(node ast.Node) int {
 	return p.fileSet.Position(node.End()).Line
 }
 
+func (p *Processor) shouldAddWS(node, prevNode ast.Node, message string) {
+	p.addError(node, prevNode, message, ShouldAddWS)
+}
+
+func (p *Processor) shouldRemoveWS(node ast.Node, message string) {
+	p.addError(node, nil, message, ShouldRemoveWS)
+}
+
+func (p *Processor) shouldAddWSTODO(node, prevNode ast.Node, message string) {
+	p.result = append(p.result, Result{
+		Type:         ShouldAddWS,
+		PreviousNode: prevNode,
+		ErrorNode:    node,
+		Reason:       message,
+	})
+}
+
 // Add an error for the file and line number for the current token.Pos with the
 // given reason.
-func (p *Processor) addError(pos token.Pos, reason string) {
-	position := p.fileSet.Position(pos)
-
+func (p *Processor) addError(node, previousNode ast.Node, reason string, typ LintErrorType) {
 	p.result = append(p.result, Result{
-		FileName:   position.Filename,
-		LineNumber: position.Line,
-		Position:   position,
-		Reason:     reason,
+		Type:         typ,
+		ErrorNode:    node,
+		PreviousNode: previousNode,
+		Reason:       reason,
 	})
 }
 
