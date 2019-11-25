@@ -120,15 +120,15 @@ func DefaultConfig() Configuration {
 
 // Result represents the result of one error.
 type Result struct {
-	Type         LintErrorType
-	Reason       string
-	ErrorNode    ast.Node
-	PreviousNode ast.Node
+	Type           LintErrorType
+	Reason         string
+	ErrorNode      ast.Node
+	PreviousNode   ast.Node
+	PreviousEndPos token.Pos
 }
 
 // String returns the filename, line number and reason of a Result.
 func (r *Result) String() string {
-	//return fmt.Sprintf("%s:%d: %s", r.FileName, r.LineNumber, r.Reason)
 	return r.Reason
 }
 
@@ -1021,26 +1021,36 @@ func (p *Processor) shouldAddWS(node, prevNode ast.Node, message string) {
 }
 
 func (p *Processor) shouldRemoveWS(node ast.Node, message string) {
-	p.addError(node, nil, message, ShouldRemoveWS)
-}
-
-func (p *Processor) shouldAddWSTODO(node, prevNode ast.Node, message string) {
-	p.result = append(p.result, Result{
-		Type:         ShouldAddWS,
-		PreviousNode: prevNode,
-		ErrorNode:    node,
-		Reason:       message,
-	})
+	// TODO: THIS WILL NOT WORK SHOULD BE ANOTHER NODE!
+	p.addError(node, node, message, ShouldRemoveWS)
 }
 
 // Add an error for the file and line number for the current token.Pos with the
 // given reason.
 func (p *Processor) addError(node, previousNode ast.Node, reason string, typ LintErrorType) {
+	var (
+		previousEndPos = previousNode.End()
+		commentMap     = ast.NewCommentMap(p.fileSet, previousNode, p.file.Comments)
+	)
+
+	// If we have comments belonging to the previous statement, update the
+	// ending position if the comments are after the statement.
+	if m, ok := commentMap[previousNode]; ok {
+		for _, txt := range m {
+			if txt.Pos() < previousNode.Pos() {
+				continue
+			}
+
+			previousEndPos = txt.End()
+		}
+	}
+
 	p.result = append(p.result, Result{
-		Type:         typ,
-		ErrorNode:    node,
-		PreviousNode: previousNode,
-		Reason:       reason,
+		PreviousEndPos: previousEndPos,
+		Type:           typ,
+		ErrorNode:      node,
+		PreviousNode:   previousNode,
+		Reason:         reason,
 	})
 }
 

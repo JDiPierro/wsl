@@ -1,10 +1,7 @@
 package wsl
 
 import (
-	"fmt"
-	"go/ast"
 	"go/token"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -31,9 +28,8 @@ func runFunc(p *Processor) func(pass *analysis.Pass) (interface{}, error) {
 
 			switch err.Type {
 			case ShouldAddWS:
-				pos = err.ErrorNode.Pos()
-				end = err.ErrorNode.Pos()
-				// newText = newlineAndIndent(err.ErrorNode, err.PreviousNode)
+				pos = err.PreviousEndPos
+				end = err.PreviousEndPos
 				newText = []byte("\n")
 			case ShouldRemoveWS:
 				// TODO: This is not yet implemented.
@@ -77,22 +73,4 @@ func runFunc(p *Processor) func(pass *analysis.Pass) (interface{}, error) {
 
 		return nil, nil
 	}
-}
-
-// We must calculate how much the text is indented to get the number of tabs we
-// must indent the line after applying the newline.
-func newlineAndIndent(n1, n2 ast.Node) []byte {
-	var (
-		// TODO: Not reliable with comments
-		posDiff = n1.Pos() - n2.End() - 1 // -1 to remove the newline
-		tabs    = make([]string, posDiff)
-	)
-
-	for i := range tabs {
-		tabs[i] = "\t"
-	}
-
-	return []byte(fmt.Sprintf(
-		"\n%s", strings.Join(tabs, ""),
-	))
 }
