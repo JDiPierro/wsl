@@ -1481,10 +1481,10 @@ func TestWithConfig(t *testing.T) {
 			},
 		},
 		{
-			description:         "must cuddle error checks with the error assignment",
+			description: "must cuddle error checks with the error assignment",
 			customConfig: &Configuration{
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
@@ -1500,11 +1500,11 @@ func TestWithConfig(t *testing.T) {
 			expectedErrorStrings: []string{"if statements that check an error must be cuddled with the statement that assigned the error"},
 		},
 		{
-			description:         "must cuddle error checks with the error assignment multivalue",
+			description: "must cuddle error checks with the error assignment multivalue",
 			customConfig: &Configuration{
-				AllowMultiLineAssignCuddle:       true,
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				AllowMultiLineAssignCuddle:  true,
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
@@ -1520,10 +1520,10 @@ func TestWithConfig(t *testing.T) {
 			expectedErrorStrings: []string{"if statements that check an error must be cuddled with the statement that assigned the error"},
 		},
 		{
-			description:         "must cuddle error checks with the error assignment only on assignment",
+			description: "must cuddle error checks with the error assignment only on assignment",
 			customConfig: &Configuration{
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
@@ -1546,11 +1546,11 @@ func TestWithConfig(t *testing.T) {
 			expectedErrorStrings: []string{},
 		},
 		{
-			description:         "must cuddle error checks with the error assignment multivalue NoError",
+			description: "must cuddle error checks with the error assignment multivalue NoError",
 			customConfig: &Configuration{
-				AllowMultiLineAssignCuddle:       true,
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				AllowMultiLineAssignCuddle:  true,
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
@@ -1565,11 +1565,11 @@ func TestWithConfig(t *testing.T) {
 			expectedErrorStrings: []string{},
 		},
 		{
-			description:         "must cuddle error checks with the error assignment known err",
+			description: "must cuddle error checks with the error assignment known err",
 			customConfig: &Configuration{
-				AllowMultiLineAssignCuddle:       true,
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				AllowMultiLineAssignCuddle:  true,
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
@@ -1585,11 +1585,11 @@ func TestWithConfig(t *testing.T) {
 			expectedErrorStrings: []string{"if statements that check an error must be cuddled with the statement that assigned the error"},
 		},
 		{
-			description:         "err-check cuddle enforcement doesn't generate false-positives.",
+			description: "err-check cuddle enforcement doesn't generate false-positives.",
 			customConfig: &Configuration{
-				AllowMultiLineAssignCuddle:       true,
-				MustCuddleErrCheckAndAssign:      true,
-				ErrorVariableNames:               []string{"err"},
+				AllowMultiLineAssignCuddle:  true,
+				MustCuddleErrCheckAndAssign: true,
+				ErrorVariableNames:          []string{"err"},
 			},
 			code: []byte(`package main
 
